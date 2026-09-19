@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Интерактивный платёжный календарь и сценарная модель ликвидности строительного подрядчика">
+  <title>Контур ликвидности</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">КЛ</div>
+        <div>
+          <p class="eyebrow">Финансовый контур подрядчика</p>
+          <h1>Ликвидность и кассовые разрывы</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="save-state" id="saveState"><span class="save-dot"></span> Данные сохранены</span>
+        <button class="button button-secondary" id="exportButton" type="button">Экспорт JSON</button>
+        <label class="button button-secondary file-button">Импорт JSON<input id="importInput" type="file" accept="application/json"></label>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <span class="status-pill">Платёжный календарь · 8 недель</span>
+          <h2>Когда денег не хватит — и сколько нужно заранее</h2>
+          <p>Модель соединяет банковский остаток, график платежей, взаиморасчёты с генподрядчиком и прямую оплату материалов за подрядчика.</p>
+        </div>
+        <div class="hero-controls">
+          <label>Сценарий
+            <select id="activeScenario"></select>
+          </label>
+          <label>Начало прогноза
+            <input id="startDate" type="date">
+          </label>
+          <label>Горизонт
+            <select id="horizonDays">
+              <option value="28">4 недели</option>
+              <option value="56">8 недель</option>
+              <option value="84">12 недель</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="kpi-grid" aria-label="Ключевые показатели">
+        <article class="kpi-card kpi-cash">
+          <div class="kpi-head"><span>Минимальный остаток</span><span class="kpi-icon">↘</span></div>
+          <strong id="kpiMinCash">—</strong>
+          <small id="kpiMinCashDate">—</small>
+        </article>
+        <article class="kpi-card kpi-gap">
+          <div class="kpi-head"><span>Первый кассовый разрыв</span><span class="kpi-icon">!</span></div>
+          <strong id="kpiFirstGap">—</strong>
+          <small id="kpiGapDetail">—</small>
+        </article>
+        <article class="kpi-card kpi-funding">
+          <div class="kpi-head"><span>Потребность в финансировании</span><span class="kpi-icon">₽</span></div>
+          <strong id="kpiFunding">—</strong>
+          <small>до страхового остатка</small>
+        </article>
+        <article class="kpi-card kpi-net">
+          <div class="kpi-head"><span>Чистая позиция с ГП</span><span class="kpi-icon">⇄</span></div>
+          <strong id="kpiNetPosition">—</strong>
+          <small id="kpiNetCaption">—</small>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Денежная позиция</p>
+              <h3>Прогноз остатка по сценариям</h3>
+            </div>
+            <div class="legend" id="cashLegend"></div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="cashChart" role="img" aria-label="График прогноза остатка денежных средств"></canvas>
+            <div class="chart-tooltip" id="chartTooltip" hidden></div>
+          </div>
+          <p class="chart-note">Пунктир — страховой остаток. Красная зона — отрицательный денежный баланс.</p>
+        </article>
+
+        <article class="panel balance-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Стартовая позиция</p>
+              <h3>Баланс обязательств</h3>
+            </div>
+            <button class="text-button" id="editBalancesButton" type="button">Изменить</button>
+          </div>
+          <div class="balance-stack">
+            <div class="balance-row"><span>Остаток денег</span><strong id="balanceCash">—</strong></div>
+            <div class="balance-row"><span>ГП должен подрядчику <em>его КЗ / ваша ДЗ</em></span><strong id="balanceGcDebt">—</strong></div>
+            <div class="balance-row"><span>Подрядчик должен ГП <em>встречная позиция</em></span><strong id="balanceCounterDebt">—</strong></div>
+            <div class="net-position" id="netPositionBlock">
+              <span>Чисто к получению от ГП</span>
+              <strong id="balanceNet">—</strong>
+            </div>
+            <div class="balance-row"><span>Обязательства поставщикам</span><strong id="balanceSuppliers">—</strong></div>
+            <div class="balance-row"><span>Страховой остаток</span><strong id="balanceBuffer">—</strong></div>
+          </div>
+          <p class="callout" id="balanceCallout"></p>
+        </article>
+      </section>
+
+      <section class="panel scenarios-panel" id="scenariosSection">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Что будет, если</p>
+            <h3>Сравнение сценариев</h3>
+          </div>
+          <span class="help-text">Параметры можно менять — прогноз пересчитается сразу</span>
+        </div>
+        <div class="scenario-layout">
+          <div class="scenario-cards" id="scenarioCards"></div>
+          <div class="funding-chart-wrap">
+            <canvas id="fundingChart" role="img" aria-label="Сравнение потребности в финансировании"></canvas>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="comparison-table">
+            <thead><tr><th>Сценарий</th><th>Мин. остаток</th><th>Первый разрыв</th><th>Макс. разрыв</th><th>Финансирование до норматива</th><th>Остаток на конец</th></tr></thead>
+            <tbody id="scenarioComparisonBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel calendar-panel">
+        <div class="panel-heading calendar-heading">
+          <div>
+            <p class="eyebrow">Исходные данные</p>
+            <h3>Календарь поступлений и выплат</h3>
+          </div>
+          <div class="panel-actions">
+            <button class="button button-secondary" id="addKs2Button" type="button">+ КС-2</button>
+            <button class="button button-primary" id="addFlowButton" type="button">+ Операция</button>
+          </div>
+        </div>
+        <div class="calendar-summary" id="calendarSummary"></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Дата</th><th>Проект</th><th>Операция</th><th>Сумма</th><th>Комментарий</th><th aria-label="Действия"></th></tr>
+            </thead>
+            <tbody id="flowsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel projects-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Контроль взаиморасчётов</p>
+            <h3>Проекты с генподрядчиком</h3>
+          </div>
+          <button class="button button-secondary" id="addProjectButton" type="button">+ Проект</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Проект</th><th>ГП должен подрядчику</th><th>Встречный долг подрядчика</th><th>Чистая позиция</th><th>Долг поставщикам</th><th aria-label="Действия"></th></tr></thead>
+            <tbody id="projectsBody"></tbody>
+            <tfoot id="projectsFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="method-note">
+        <strong>Как считается.</strong> Прямая оплата материала генподрядчиком не попадает в банковский остаток: она уменьшает денежную выплату поставщику и увеличивает встречный долг подрядчика перед ГП. Денежное поступление от ГП ограничено положительной чистой позицией после взаимозачёта. Кассовый разрыв возникает при остатке ниже нуля; потребность в финансировании считается до страхового остатка.
+      </section>
+    </main>
+  </div>
+
+  <dialog id="balanceDialog" class="modal">
+    <form method="dialog" id="balanceForm">
+      <div class="modal-head"><div><p class="eyebrow">Параметры</p><h3>Стартовые остатки</h3></div><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <div class="form-grid">
+        <label>Остаток денег, ₽<input name="openingCash" type="number" step="1000" min="0"></label>
+        <label>Страховой остаток, ₽<input name="buffer" type="number" step="1000" min="0"></label>
+        <label>ГП должен подрядчику, ₽<input name="gcDebt" type="number" step="1000" min="0"></label>
+        <label>Подрядчик должен ГП, ₽<input name="counterDebt" type="number" step="1000" min="0"></label>
+        <label>Обязательства поставщикам, ₽<input name="supplierDebt" type="number" step="1000" min="0"></label>
+      </div>
+      <div class="modal-actions"><button class="button button-secondary" value="cancel">Отмена</button><button class="button button-primary" id="saveBalancesButton" value="default">Сохранить</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="flowDialog" class="modal">
+    <form method="dialog" id="flowForm">
+      <input name="flowId" type="hidden">
+      <div class="modal-head"><div><p class="eyebrow">Календарь</p><h3 id="flowDialogTitle">Новая операция</h3></div><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <div class="form-grid">
+        <label>Дата<input name="date" type="date" required></label>
+        <label>Проект<select name="project"></select></label>
+        <label class="wide">Тип операции<select name="type" required></select></label>
+        <label>Сумма, ₽<input name="amount" type="number" step="1000" min="0" required></label>
+        <label>Комментарий<input name="comment" type="text" maxlength="100" placeholder="Например, платёж по графику"></label>
+      </div>
+      <p class="form-hint" id="flowHint"></p>
+      <div class="modal-actions"><button class="button button-secondary" value="cancel">Отмена</button><button class="button button-primary" id="saveFlowButton" value="default">Сохранить</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="projectDialog" class="modal">
+    <form method="dialog" id="projectForm">
+      <input name="projectId" type="hidden">
+      <div class="modal-head"><div><p class="eyebrow">Взаиморасчёты</p><h3>Проект с генподрядчиком</h3></div><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <div class="form-grid">
+        <label class="wide">Название проекта<input name="name" type="text" required maxlength="60"></label>
+        <label>ГП должен подрядчику, ₽<input name="gcDebt" type="number" min="0" step="1000" required></label>
+        <label>Подрядчик должен ГП, ₽<input name="counterDebt" type="number" min="0" step="1000" required></label>
+        <label>Долг поставщикам, ₽<input name="supplierDebt" type="number" min="0" step="1000" required></label>
+      </div>
+      <div class="modal-actions"><button class="button button-secondary" value="cancel">Отмена</button><button class="button button-primary" id="saveProjectButton" value="default">Сохранить</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
